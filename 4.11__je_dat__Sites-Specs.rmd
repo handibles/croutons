@@ -1,0 +1,461 @@
+---
+title: "plotting samples (sites) and taxa (\"species\") in vegan"
+author: "jfg"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+      toc: TRUE
+      toc_depth: 4
+  pdf_document:
+      toc: TRUE
+      toc_depth: 4
+---
+
+```{r try_escape_setup, echo = FALSE, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+options(width = 100)
+
+```
+
+## _`CCA`-veat emptor_
+
+ > __Note:__ I had originally employed this in order to get NMDS or CCA to talk to ```ggplot```. For PCoA, this could be viewed as contentious (__this could be wrong__), as we are essentially applying an _averaged linear_ relationship to a dissimilarity space ( _bound 0-1_, ergo not exactly appropriate). See [the link](https://github.com/vegandevs/vegan/issues/438) and the help material for the relevant functions.
+ 
+ > However and ultimately, as an explorative method my hope is that the risk is low.
+
+### 0/8 :: just the fracking code please
+
+```{r just_the_code, eval=FALSE}
+
+    # well fine.
+    # note these JTC chunks are usually not exactly the same as the embedded code
+
+      library(vegan)
+      library(ggplot2)
+      
+
+##  play_with_drugs dataset:  ========================================
+      
+    ## these are as shown above
+      feat <- readRDS("../input/f/Julias_meds_presabs.RDS")
+      mdat <- readRDS("../input/f/julias_meds_metadata.RDS")
+      jc_dist <- readRDS("../input/f/julias_meds_jcd_dist.RDS")
+      
+      
+## 1 :: calculate an ordination  ------------------------
+      
+      vegan_pcoa <- vegan::wcmdscale(jc_dist)
+      
+    # as wrapping cmdscale, this is a simple matrix:
+      head( vegan_pcoa )
+      
+      
+## 2 :: plot it ---------------------------------------
+      
+    # we can simply add on the data we need from mdat
+      samp_ord <- rownames(vegan_pcoa)
+      vpd <- as.data.frame(cbind( vegan_pcoa[ samp_ord, ],    # PCoA values
+                                  mdat[ samp_ord, ]))         # metadata
+      
+    # could probably give better names to the PCoA axes
+      colnames(vpd)[1:ncol(vegan_pcoa)] <- paste0( "axis_", 1:ncol(vegan_pcoa))
+      head(vpd)
+      
+      (samp_plot <- ggplot( vpd, aes(x = axis_1, y = axis_2, fill = as.numeric(Age), shape = Disease)) +
+          theme_minimal() +
+          coord_fixed(ratio =  1, ylim = c(-0.5,0.5), xlim = c(-0.5,0.5) ) +
+          geom_point(size = 4) +
+          scale_shape_manual(values=  c(21,22)) +
+          labs(
+            title="a simple vegan PCoA in ggplot",
+            subtitle = "compare with the first plot above",
+            y = "PC2 - second strongest trend",
+            x = "PC1 - strongest trend",
+            caption = "huzzah"
+          ))
+      
+      
+## 3  get med scores --------------------------------
+      
+    # no species scores available - samples only (these are all the same)
+      all( as.list(
+        (vegan_pcoa) == scores(vegan_pcoa),
+        scores(vegan_pcoa) == scores(vegan_pcoa, display = "sites"),
+        scores(vegan_pcoa) == scores(vegan_pcoa, display = "species")
+      ))
+      
+    # need to make new scores for these data: go via 
+      vegan_pcoa_feats <- as.data.frame(wascores(x = vegan_pcoa, w = feat))
+      
+    # adding on data maxes less sense here, but some hierarchy data about meds would fit nicely
+      vp_feats <- vegan_pcoa_feats
+      vp_feats$rubbish <- rep(c("A", "B"), 5)
+      vp_feats$med <- rownames(vp_feats)
+      
+    # could probably give better names to the PCoA axes
+      colnames(vp_feats)[1:ncol(vegan_pcoa_feats)] <- paste0( "axis_", 1:ncol(vegan_pcoa_feats))
+      
+      
+## 4  plot med scores --------------------------------
+      
+      (feat_plot <- ggplot( vp_feats, aes(x = axis_1, y = axis_2, fill = rubbish, colour = rubbish)) +
+          coord_fixed(ratio =  1, ylim = c(-0.5,0.5), xlim = c(-0.5,0.5) ) +
+          theme_minimal() +
+          geom_text(aes(label = med), size = 4) +
+          scale_shape_manual(values=  c(21,22)) +
+          labs(
+            title="abundance-weighted positions",
+            subtitle = "of meds to sample location",
+            y = "PC2 - second strongest trend",
+            x = "PC1 - strongest trend",
+            caption = "hurrmm."
+          ))
+      
+      
+    ## check again
+      # head(vpd)
+      # head(vp_feats)
+
+    # biplot med and sample scores      
+      ggplot( vpd ) +
+        theme_minimal() +
+        coord_fixed(ratio =  1, ylim = c(-0.5,0.5), xlim = c(-0.5,0.5) ) +
+        # samples
+        geom_point( aes(x = axis_1, y = axis_2, fill = as.numeric(Age), shape = Disease), size = 4) +
+        # text
+        geom_text(data = vp_feats, aes(x = axis_1, y = axis_2, label = med, colour = rubbish), size = 4) +
+        scale_shape_manual(values=  c(21,22)) +
+        labs(
+          title="abundance-weighted positions",
+          subtitle = "of meds to sample location",
+          y = "PC2 - second strongest trend",
+          x = "PC1 - strongest trend",
+          caption = "hurrmm."
+        )
+
+
+```
+
+---
+
+## skippable preamble - "species" in ordinations
+
+### 1/8 :: introduction
+
+Multivariate ordination methods make us feel good about ourselves while allowing us to mathematically relate, and then visualise, many (many..) samples from a dataset. Many popular methods will use the feature table (e.g. ```samples * features```) to create a distance matrix of how similar samples are to one another, giving us a table that tells a lot about relatedness of ```samples``` but has 'used up' all of the ```feature``` information to do so - these distance matrices tell us nothing about the ```features``` themselves.
+
+For instance, the following tables show the first 5 samples in our ```play_with_drugs``` dataset; firstly relating the medications taken:
+
+```{r abs_demo, echo = FALSE}
+knitr::kable( as.data.frame( as.matrix(readRDS("../input/f/Julias_meds_presabs.RDS")))[1:5, ])
+```
+
+
+as well as environmental factors or variables that characterise the human people who are our 'observations' or 'samples': 
+
+```{r mgdat_demo, echo = FALSE}
+knitr::kable( as.data.frame( as.matrix(readRDS("../input/f/julias_meds_metadata.RDS")))[1:5, ])
+```
+
+
+We can understand how ```samples``` (people) are affected by medications and environmental factors in the ```play_with_drugs``` dataset by working out what samples are the most similar to each other, and trying to relate this to the nature of the dataset we have. To do this, we've calculated the _Jaccardian_ dissimilarities (a presence / absence metric; mathematics not important here) between those samples, where:
+
+ - samples with the exact same pattern of medications (i.e. identical samples) will have a dissimilarity value of ```0``` to each other.
+ - samples which are totally unalike will have a maximal value of ```1``` with respect to each other, indicating they are as unalike as is possible. 
+ - samples in between identical and unalike (i.e. most samples) will be related by values ranging from ```0``` to ```1```, depending on how alike or unalike they are.
+ 
+The start of the table of these dissimilarities is below. Note there are no medications: medication presence/absences were smelted down during the _calculation_, and the info output from that calculation tells us about the _samples only_: so we have samples on the rows and columns:
+
+```{r dist_mat_demo, echo = FALSE}
+knitr::kable( as.data.frame( as.matrix(readRDS("../input/f/julias_meds_jcd_dist.RDS")))[1:5, 1:5])
+```
+
+
+We can now represent how similar these samples are using a multivariate ordination method (there are _many_) to break down all these different interactions such that __(a)__ we see the most strongest effects first, and __(b)__ we can happily visualise these trends in ways that are somewhat sensible.
+
+```{r ordi_demo, echo = FALSE}
+library(vegan, quietly = TRUE)
+# library(ggplot2, quietly = TRUE)
+demo_jd <- readRDS("../input/f/julias_meds_jcd_dist.RDS")
+plot( vegan::wcmdscale(demo_jd), 
+      # main = "weighted classic multidimensional scaling (W-CMDS)\n(a.k.a. principle co-ordinates analysis, PCoA)") #,
+      main = "closer = more similar",
+      ylab = "PC2 - second strongest trend",
+      xlab = "PC1 - strongest trend")
+
+```
+
+
+### 2/8 :: intent
+
+That should all make sense so far. However, our goal here is to find way to reveal (or create), and plot the corresponding pattern of feature abundances in the same reference frame, that is
+
+  - __plot features as well as samples__
+  
+Note that those features can be taxa, ASV, genes, etc., - in ```play_with_drugs```, each feature tells us whether or not a sample (human person) has taken that medication, in presence absence (```0``` of  ```1```)/ format.
+
+Here we're using ```vegan```'s machinery rather than ```ape```. ```Ape```'s ```pcoa``` is _functionally_ equivalent to ```vegan```'s ```wcmdscale```, (which wraps and can weight ```stats::cmdscale``` - classic multidimensional scaling is simply another (older?) name for PCoA).
+
+The big difference is that ```vegan``` usually gives back a much more complicated object than ```ape```'s ```row*column``` matrix of sample contributions to the ordination. In ```vegan```, info is also returned about the features being observed across samples for most methods (CCA, RDA, NMDS). However, as PCoA in ```vegan``` is a wrapper around ```stats::cmdscale```, much of the associated  data needs to be generated in order to relate feature abundances, specifically by calculating the weighted centroid of each feature between samples (```vegan::scores```).
+
+Here, we'll use ```vegan``` to:
+
+  1. __calculate an ordination__ : in ```vegan```, make a PCoA of some reduced ```sample*medication``` data, see how features (i.e. medication) fit into this, and maybe add some environmental variables as relevant. 
+  2. __plotting that ordination__ : getting the ```df``` pieces we need to plot the relationship between samples
+  3. __extract species scores__ : retrieve from the ordination object ```vegan``` gives us in ```1``` above, or calculate from our dissimilarity data and species abundances.
+  4. __plot species scores__ too, getting the bits we need as we need them.
+
+These data (sites / samples) can then be plotted in the usual fashion, or made to look all faaaancy in ```ggplot```. Checking base is usually a handy reference to make sure that outputs match, but for plotting shenanigans we'll be using ```ggplot2``` instead. 
+
+__NB:__ the package ```ggvegan``` was built to do all of this for you. 
+Nevertheless.
+
+---
+
+## actual workings
+
+### 3/8 :: invoke
+  
+Open books, dust off books:
+```{r invoke, include=TRUE}
+  library(vegan)
+  library(ggplot2)
+
+```
+
+
+### 4/8 :: ingest
+
+Suck data in through a straw:
+```{r ingestion, include=TRUE}
+
+  ## play_with_drugs dataset:  ========================================
+  
+  ## these are as shown above
+    feat <- readRDS("../input/f/Julias_meds_presabs.RDS")
+    mdat <- readRDS("../input/f/julias_meds_metadata.RDS")
+    jc_dist <- readRDS("../input/f/julias_meds_jcd_dist.RDS")
+
+```
+
+
+### 5/8 :: inspect
+
+We can quickly make an ordination obejct in vegan, view it's output (__1.__ above; this is the actual result), and then plot that output (__2.__ above; but remember this is just a communication tool, whether to yourself or whoever).
+
+Recently, I've gotten quite attached to using non-metric multidimensional scaling (NMDS), a successor to the PCoA method that uses random starting points to create more robust outcomes in it's calculation - and in ```vegan```, it also retains info about features (assuming you provide features to the function). By default, it will condense things down to 2 axes (imagine _that_) as best it can, but this can be changed using ```k```.
+
+```{r nmds_inspection, include=TRUE, collapse = TRUE}
+
+  # provide features and specify distance (dissim) metric
+  # from above, we know that SAMPLES ARE ROWS, which is the format vegan uses
+    vegan_nmds <- metaMDS( comm = feat, distance = "jaccard")
+    
+  # come see
+    vegan_nmds
+
+```
+
+Note that a default plot will include both the samples and features - something that was not the case in the PCoA (```wcmdscale```) plot at the top of the page:
+
+```{r nmds_inspection_plot,echo = TRUE, collapse = TRUE}
+    par(mfrow = c(1,2))
+    plot(vegan_nmds, main = "rings = samples... ")
+    plot(vegan_nmds, main = "...crosses = meds", type = "text")
+    
+```
+
+
+Note also how visible the "```species```" data is: ```vegan_nmds$species```. However, the developers specifically warn us to not access this data directly, and to __use the ```scores``` function__ they have created expressly for this purpose:
+
+```{r nmds_inspection_scores, echo = TRUE, collapse = TRUE}
+  # this is the correct way to access this data
+    lapply( scores( vegan_nmds ), head)
+  
+  # note alos also - only shows scores for species
+```
+
+
+#### interjection: most vegan analyses are similarly structured
+
+If curious, (Constrained) Correspondence Analysis does something similar, but using ```ChiSq``` distances between both samples and "species" rather than a dissimilarity: consider checking this out, and seeing the slightly different structure to the scores object contained within the output. Code ```NOTRUN```.
+
+```{r cca_inspection, include=TRUE, eval = FALSE}
+      
+    # again, many options, but we require at least a feature table, metadata, and formula
+    # here, we specify to include everything (1) in the calculation
+      vegan_cca <- cca( feat ~ 1, data = mdat)
+      
+    # come see
+      vegan_cca
+      
+    # again, structure to explore - consider using View in Rstudio
+      str( vegan_cca )
+      
+    # finally, a different sort of scores for CCA:
+      scores(vegan_cca)
+      
+    # plot with similar conventions to those above.
+      plot(vegan_cca)
+
+```
+
+
+
+### 6/8 :: interpret
+
+There are all sorts of terrible (in the sense of "instilling terror") things you could do with your plots. We are going to sidestep all of that and make a very simple PCoA using ```vegan``` and ```ggplot```. It will take at least as long to do it this way, but it fits better with the way we live now. 
+
+For this first part we'll:
+
+  1. calculate an ordination  
+  2. plotting that ordination in ```ggplot2```
+
+
+```{r pcoa_interpretation, include=TRUE, eval = TRUE, condense = TRUE }
+
+## 1 :: calculate an ordination  ------------------------
+      
+      vegan_pcoa <- vegan::wcmdscale(jc_dist)
+      
+    # as wrapping cmdscale, this is a simple matrix:
+      head( vegan_pcoa )
+      
+
+## 2 :: plot it ---------------------------------------
+
+    # we can simply add on the data we need from mdat
+      samp_ord <- rownames(vegan_pcoa)
+      vpd <- as.data.frame(cbind( vegan_pcoa[ samp_ord, ],    # PCoA values
+                                  mdat[ samp_ord, ]))         # metadata
+      
+    # could probably give better names to the PCoA axes
+      colnames(vpd)[1:ncol(vegan_pcoa)] <- paste0( "axis_", 1:ncol(vegan_pcoa))
+      head(vpd)
+      
+      (samp_plot <- ggplot( vpd, aes(x = axis_1, y = axis_2, fill = as.numeric(Age), shape = Disease)) +
+        theme_minimal() +
+        coord_fixed(ratio =  1, ylim = c(-0.5,0.5), xlim = c(-0.5,0.5) ) +
+        geom_point(size = 4) +
+        scale_shape_manual(values=  c(21,22)) +
+        labs(
+          title="a simple vegan PCoA in ggplot",
+          subtitle = "compare with the first plot above",
+          y = "PC2 - second strongest trend",
+          x = "PC1 - strongest trend",
+          caption = "huzzah"
+        ))
+
+```
+
+
+
+
+### 7/8 :: interpolate
+
+Now: the only bit of info you actually asked for - _how the species_. Tasks:
+
+  3. extract species scores
+  4. plot species scores too.
+
+We find that because the PCoA object never _saw_ species data, there is none to extract. So, we _make_ new species scores for, or with reference to, the PCOA object. Specifically for PCoA (```wcmdscale```) we are required to make weighted averages of the features' position in the plot using ```wascores```.
+
+__See also the caveat at opening.__
+
+```{r interpolation_plot_a}
+
+## 3  get med scores --------------------------------
+
+  # no species scores available - samples only (these are all the same)
+      all( as.list(
+        (vegan_pcoa) == scores(vegan_pcoa),
+        scores(vegan_pcoa) == scores(vegan_pcoa, display = "sites"),
+        scores(vegan_pcoa) == scores(vegan_pcoa, display = "species")
+      ))
+
+
+  # need to make new scores for these data: go via 
+    vegan_pcoa_feats <- as.data.frame(wascores(x = vegan_pcoa, w = feat))
+    
+  # adding on data maxes less sense here, but some hierarchy data about meds would fit nicely
+    vp_feats <- vegan_pcoa_feats
+    vp_feats$rubbish <- rep(c("A", "B"), 5)
+    vp_feats$med <- rownames(vp_feats)
+
+  # could probably give better names to the PCoA axes
+    colnames(vp_feats)[1:ncol(vegan_pcoa_feats)] <- paste0( "axis_", 1:ncol(vegan_pcoa_feats))
+
+        
+## 4  plot med scores --------------------------------
+    
+    (feat_plot <- ggplot( vp_feats, aes(x = axis_1, y = axis_2, fill = rubbish, colour = rubbish)) +
+      coord_fixed(ratio =  1, ylim = c(-0.5,0.5), xlim = c(-0.5,0.5) ) +
+      theme_minimal() +
+      geom_text(aes(label = med), size = 4) +
+      scale_shape_manual(values=  c(21,22)) +
+      labs(
+        title="abundance-weighted positions",
+        subtitle = "of meds to sample location",
+        y = "PC2 - second strongest trend",
+        x = "PC1 - strongest trend",
+        caption = "hurrmm."
+      ))
+
+
+
+```
+
+(These methods have been simplified recently)[https://github.com/vegandevs/vegan/issues/438], but do not yet seem to be available (see below)
+
+```{r interpolation_plot_check, eval=FALSE}
+   # :(  why jari why
+    sppscores(vegan_pcoa)
+    # > Error: 'sppscores' is not implemented yet
+
+```
+
+
+### 8/8 :: incorporate
+
+No harm in presenting them together. There are more elaborate ways and we should all feel free to explore them.
+
+```{r samp_feat_plot, collapse = TRUE}
+
+    # what we got
+      head(vpd)
+      head(vp_feats)
+
+    # what we plot - beware the balance here of whats plotted for meds/samples
+      ggplot( vpd ) +
+          theme_minimal() +
+          coord_fixed(ratio =  1, ylim = c(-0.5,0.5), xlim = c(-0.5,0.5) ) +
+          # samples
+          geom_point( aes(x = axis_1, y = axis_2, fill = as.numeric(Age), shape = Disease), size = 4) +
+          # text
+          geom_text(data = vp_feats, aes(x = axis_1, y = axis_2, label = med, colour = rubbish), size = 4) +
+          scale_shape_manual(values=  c(21,22)) +
+          labs(
+            title="abundance-weighted positions",
+            subtitle = "of meds to sample location",
+            y = "PC2 - second strongest trend",
+            x = "PC1 - strongest trend",
+            caption = "hurrmm."
+          )
+
+
+  ## alt - you could give a shot
+    # ggpubr::ggarrange(
+    #   samp_plot,
+    #   feat_plot, 
+    #   ncol = 2, nrow = 1, common_legend = FALSE)
+
+```
+
+---
+
+```{r info_from_the_sesh}
+# thanks all!
+sessionInfo()
+```
+
+## 
