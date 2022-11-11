@@ -1,0 +1,35 @@
+# The frustration of working with a remote R libraries (as enforced by certain IT policies) is something else.
+# This can be helped, to a degree, by setting a local (on your computer) library whenever an R session loads.
+# First decide a location for your local library - I have mine on the humble Desktop (IDUWindows lol)
+
+
+## in R:
+
+# line [1] here is the REMOTE personal library, set upon startup:
+> .libPaths()
+[1] "\\\\mkvXYZW/homeshares3$/Citizen.Hand/R/win-library/4.0"
+[2] "C:/Program Files/R/R-4.0.2/library"                         
+
+# note the .Rhistory file in this location: a good sign that R uses this dir as your working directory 
+# we'll put our .Rprofile into this working directory, as it will be read at R startup (if not in an Rproject..)
+> list.files("\\\\mkvXYZW/homeshares3$/Citizen.Hand/", all = TRUE)
+
+# we can tell R to use a LOCAL personal library when we start R:
+> .libPaths("C:/Users/Citizen.Hand.ORGANISATION/Desktop/teag/programs/R/win-library/4.0")
+> .libpaths()
+# note how the top one has now changed!
+[1] "C:/Users/Citizen.Hand.ORGANISATION/Desktop/teag/programs/R/win-library/4.0"
+[2] "C:/Program Files/R/R-4.0.2/library"
+
+# we could copy the contents of the win-library to our new local spot -
+# this might save re-downloading it all (it's possibly a bad idea, but it was done)
+> list.files(path = "C:/Users/Citizen.Hand.ORGANISATION/Desktop/teag/programs/R/win-library/4.0")
+
+
+# we now know where our new LOCAL lib is, we know where our .Rprofile file will go 
+# - now make (or add to) an .Rprofile with this command, that will set this if you're on windows:
+if( any(grepl( 'WINDOWS', Sys.getenv() )) ){ 
+  .libPaths('C:/Users/Citizen.Hand.ORGANISATION/Desktop/teag/programs/R/win-library/4.0') 
+}
+
+# startup R and check..
